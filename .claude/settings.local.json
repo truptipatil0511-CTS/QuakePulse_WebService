@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/349300/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/d0eaddda-89b6-4146-8a96-6ca8e8e440e7/5c29dd2c-0f1f-44c5-90b2-b010101ec34b/skills/docx/**)",
+      "Bash(python scripts/office/unpack.py \"C:\\\\Users\\\\349300\\\\OneDrive - Cognizant\\\\U2A_2026\\\\ph-3\\\\Draft\\\\Uploda\\\\QuakePulse_LLD.docx\" \"C:\\\\Temp\\\\lld_unpacked\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\349300\\\\OneDrive - Cognizant\\\\U2A_2026\\\\ph-3\\\\Source\\\\Claude\\\\QuakePulse_WebUI\" | ForEach-Object { Remove-Item -Recurse -Force $_.FullName -Confirm:$false })"
+    ]
+  }
+}

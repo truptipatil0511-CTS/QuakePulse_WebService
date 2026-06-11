@@ -1,0 +1,6 @@
+@QuakePulse_WebService_HostAddress = http://localhost:5100
+
+GET {{QuakePulse_WebService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,300 @@
+openapi: 3.0.3
+info:
+  title: QuakePulse API
+  description: Public API for retrieving and visualizing earthquake data (table + map + AI)
+  version: 1.0.0
+
+servers:
+  - url: https://api.quakepulse.com/v1
+
+tags:
+  - name: Earthquake
+  - name: Geospatial
+  - name: Transformation
+  - name: Assistant
+
+paths:
+
+  /api/earthquake:
+    get:
+      tags: [Earthquake]
+      summary: Get earthquake data by date range
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: minMagnitude
+          in: query
+          schema:
+            type: number
+        - name: maxMagnitude
+          in: query
+          schema:
+            type: number
+        - name: location
+          in: query
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [magnitude, date]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+
+      responses:
+        "200":
+          description: List of earthquakes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EarthquakeListResponse"
+
+  /api/earthquake/latest:
+    get:
+      tags: [Earthquake]
+      summary: Get latest earthquakes
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Latest earthquakes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EarthquakeListResponse"
+
+  /api/earthquake/{id}:
+    get:
+      tags: [Earthquake]
+      summary: Get earthquake details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Earthquake details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Earthquake"
+
+  /api/earthquake/filter:
+    get:
+      tags: [Earthquake]
+      summary: Advanced filtering including geo search
+      parameters:
+        - name: lat
+          in: query
+          schema:
+            type: number
+        - name: lon
+          in: query
+          schema:
+            type: number
+        - name: radius
+          in: query
+          schema:
+            type: number
+            description: Radius in km
+        - name: minDepth
+          in: query
+          schema:
+            type: number
+        - name: maxDepth
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Filtered results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EarthquakeListResponse"
+
+  /api/earthquake/map:
+    get:
+      tags: [Geospatial]
+      summary: Get GeoJSON data for map visualization
+      responses:
+        "200":
+          description: GeoJSON response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeoJsonResponse"
+
+  /api/earthquake/table:
+    get:
+      tags: [Transformation]
+      summary: Get HTML table representation
+      responses:
+        "200":
+          description: HTML output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HtmlResponse"
+
+  /api/transform:
+    post:
+      tags: [Transformation]
+      summary: Transform data (rule-based / GenAI)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransformRequest"
+      responses:
+        "200":
+          description: Transformation output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HtmlResponse"
+
+  /api/earthquake/assistant:
+    post:
+      tags: [Assistant]
+      summary: Natural language earthquake query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantRequest"
+      responses:
+        "200":
+          description: Parsed query and data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantResponse"
+
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: API status
+
+components:
+
+  schemas:
+
+    Earthquake:
+      type: object
+      properties:
+        id:
+          type: string
+        magnitude:
+          type: number
+        place:
+          type: string
+        time:
+          type: string
+          format: date-time
+        coordinates:
+          $ref: "#/components/schemas/Coordinates"
+        url:
+          type: string
+
+    Coordinates:
+      type: object
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+
+    EarthquakeListResponse:
+      type: object
+      properties:
+        metadata:
+          type: object
+          properties:
+            count:
+              type: integer
+            source:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+            cached:
+              type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Earthquake"
+
+    GeoJsonResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          example: FeatureCollection
+        features:
+          type: array
+          items:
+            type: object
+
+    HtmlResponse:
+      type: object
+      properties:
+        html:
+          type: string
+        source:
+          type: string
+          enum: [rule-based, genai, cache]
+
+    TransformRequest:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        mode:
+          type: string
+          enum: [rule, genai]
+
+    AssistantRequest:
+      type: object
+      properties:
+        query:
+          type: string
+
+    AssistantResponse:
+      type: object
+      properties:
+        parsedFilters:
+          type: object
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Earthquake"
