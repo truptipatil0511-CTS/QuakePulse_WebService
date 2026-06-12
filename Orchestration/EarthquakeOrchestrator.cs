@@ -107,13 +107,25 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
     // -----------------------------------------------------------------------
     public async Task<GeoJsonResponse> GetMapDataAsync(EarthquakeQuery query)
     {
+        _logger.LogInformation(
+            "GetMapDataAsync: {StartDate:yyyy-MM-dd}→{EndDate:yyyy-MM-dd} mag={MinMag}-{MaxMag} depth={MinDepth}-{MaxDepth} loc='{Location}'",
+            query.StartDate, query.EndDate,
+            query.MinMagnitude, query.MaxMagnitude,
+            query.MinDepth, query.MaxDepth,
+            query.Location ?? "");
+
+        // Reuse the same filter-and-cache pipeline as the list endpoint.
+        // The GeoJSON response is a projection over the same filtered dataset,
+        // so map and list views stay in lockstep.
         var list = await GetEarthquakesAsync(query);
+
         return new GeoJsonResponse
         {
             Features = list.Data.Select(e => new GeoJsonFeature
             {
                 Geometry = new GeoJsonGeometry
                 {
+                    // GeoJSON convention: [longitude, latitude, depth]
                     Coordinates = new[] { e.Longitude, e.Latitude, e.Depth }
                 },
                 Properties = new Dictionary<string, object?>
@@ -122,6 +134,8 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
                     ["magnitude"] = e.Magnitude,
                     ["place"]     = e.Location,
                     ["time"]      = e.Time,
+                    ["depth"]     = e.Depth,      // duplicate of coords[2] — enables data-driven styling without indexing
+                    ["status"]    = e.Status,
                     ["title"]     = e.Title,
                     ["url"]       = e.Url
                 }

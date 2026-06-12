@@ -31,7 +31,7 @@ public class EarthquakeController : ControllerBase
         var query = new EarthquakeQuery
         {
             StartDate = startDate,
-            EndDate = endDate,
+            EndDate = endDate.AddDays(1),
             MinMagnitude = minMagnitude,
             MaxMagnitude = maxMagnitude,
             Location = location,
@@ -75,15 +75,37 @@ public class EarthquakeController : ControllerBase
     }
 
     // GET /api/earthquake/map
+    //   ?startDate=&endDate=&minMagnitude=&maxMagnitude=&location=
+    //   &minDepth=&maxDepth=&sortBy=&limit=&offset=
+    //
+    // Mirrors the parameter signature of /api/earthquake so the map view
+    // can respect the same filters as the list view. Returns GeoJSON
+    // FeatureCollection consumable by Azure Maps / Leaflet / Mapbox.
     [HttpGet("map")]
     public async Task<IActionResult> GetMap(
         [FromQuery] DateTime? startDate,
-        [FromQuery] DateTime? endDate)
+        [FromQuery] DateTime? endDate,
+        [FromQuery] double? minMagnitude,
+        [FromQuery] double? maxMagnitude,
+        [FromQuery] string? location,
+        [FromQuery] double? minDepth,
+        [FromQuery] double? maxDepth,
+        [FromQuery] string? sortBy,
+        [FromQuery] int? limit,
+        [FromQuery] int? offset)
     {
         var query = new EarthquakeQuery
         {
-            StartDate = startDate ?? DateTime.UtcNow.AddDays(-7).Date,
-            EndDate = endDate ?? DateTime.UtcNow.Date
+            StartDate    = startDate ?? DateTime.UtcNow.AddDays(-7).Date,
+            EndDate      = endDate   ?? DateTime.UtcNow.Date,
+            MinMagnitude = minMagnitude,
+            MaxMagnitude = maxMagnitude,
+            Location     = location,
+            MinDepth     = minDepth,
+            MaxDepth     = maxDepth,
+            SortBy       = sortBy,
+            Limit        = limit,
+            Offset       = offset
         };
         var result = await _service.GetMapDataAsync(query);
         return Ok(result);

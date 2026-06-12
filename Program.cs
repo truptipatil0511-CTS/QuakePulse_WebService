@@ -38,6 +38,21 @@ internal class Program
 
         // Add services to the container
         builder.Services.AddControllers();
+
+        // CORS — allow WebUI dev origins
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("AllowAngularApp", policy =>
+            {
+             policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            //policy.WithOrigins(
+            //        "http://localhost:4201",
+            //        "https://localhost:4201")
+            //      .AllowAnyHeader()
+            //      .AllowAnyMethod();
+        });
+        });
+
         builder.Services.AddScoped<IEarthquakeOrchestrator, EarthquakeOrchestrator>();
         builder.Services.AddScoped<IEarthquakeService, EarthquakeService>();
 
@@ -117,6 +132,8 @@ internal class Program
         }
 
         app.UseHttpsRedirection();
+        //app.UseCors("WebUI");
+        app.UseCors("AllowAngularApp");
         app.UseAuthorization();
         app.MapControllers();
 
