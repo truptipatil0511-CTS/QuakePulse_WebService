@@ -140,13 +140,128 @@ paths:
     get:
       tags: [Geospatial]
       summary: Get GeoJSON data for map visualization
+      description: |
+        Returns a GeoJSON `FeatureCollection` of earthquake events matching
+        the same filter set as `GET /api/earthquake`. Used by the WebUI map
+        view to drive Azure Maps data-driven styling expressions.
+
+        Each feature's `geometry.coordinates` follows the standard GeoJSON
+        order `[longitude, latitude, depth]`. The same fields are duplicated
+        inside `properties` so map styling can reference them by name
+        without array indexing.
+      parameters:
+        - name: startDate
+          in: query
+          required: false
+          description: Start of the query date range (UTC). Defaults to 7 days ago.
+          schema:
+            type: string
+            format: date
+            example: 2026-06-04
+        - name: endDate
+          in: query
+          required: false
+          description: End of the query date range (UTC). Defaults to today.
+          schema:
+            type: string
+            format: date
+            example: 2026-06-11
+        - name: minMagnitude
+          in: query
+          required: false
+          description: Inclusive lower bound on magnitude.
+          schema:
+            type: number
+            format: float
+            minimum: 0
+            example: 4.5
+        - name: maxMagnitude
+          in: query
+          required: false
+          description: Inclusive upper bound on magnitude.
+          schema:
+            type: number
+            format: float
+            maximum: 10
+            example: 9.9
+        - name: location
+          in: query
+          required: false
+          description: |
+            Case-insensitive substring match against USGS `place` field
+            (applied server-side after USGS fetch).
+          schema:
+            type: string
+            example: Japan
+        - name: minDepth
+          in: query
+          required: false
+          description: Inclusive lower bound on depth, in km.
+          schema:
+            type: number
+            format: float
+            minimum: 0
+            example: 0
+        - name: maxDepth
+          in: query
+          required: false
+          description: Inclusive upper bound on depth, in km.
+          schema:
+            type: number
+            format: float
+            example: 700
+        - name: sortBy
+          in: query
+          required: false
+          description: |
+            Server-side ordering. `magnitude` returns highest first;
+            `date` returns most recent first.
+          schema:
+            type: string
+            enum: [magnitude, date]
+            example: magnitude
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of features to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20000
+            example: 1000
+        - name: offset
+          in: query
+          required: false
+          description: Skip the first N records (pagination).
+          schema:
+            type: integer
+            minimum: 0
+            example: 0
       responses:
         "200":
-          description: GeoJSON response
+          description: |
+            GeoJSON FeatureCollection. Each feature carries a `Point` geometry
+            (`[longitude, latitude, depth]`) and a `properties` block with
+            event metadata for popup rendering and data-driven map styling.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GeoJsonResponse"
+              example:
+                type: FeatureCollection
+                features:
+                  - type: Feature
+                    geometry:
+                      type: Point
+                      coordinates: [141.9, 38.2, 35.2]
+                    properties:
+                      id: us7000m9q3
+                      magnitude: 6.1
+                      place: 142 km ENE of Hachijo-jima, Japan
+                      time: 2026-06-10T14:32:18Z
+                      depth: 35.2
+                      status: reviewed
+                      url: https://earthquake.usgs.gov/earthquakes/eventpage/us7000m9q3
 
   /api/earthquake/table:
     get:
@@ -209,20 +324,42 @@ components:
 
     Earthquake:
       type: object
+      required: [id, magnitude, place, time, coordinates, depth]
       properties:
         id:
           type: string
+          description: USGS unique event identifier.
+          example: us7000m9q3
         magnitude:
           type: number
+          format: float
+          description: Earthquake magnitude (Richter / moment magnitude).
+          example: 6.1
         place:
           type: string
+          description: Human-readable location description.
+          example: 142 km ENE of Hachijo-jima, Japan
         time:
           type: string
           format: date-time
+          description: Event origin time in ISO-8601 UTC (converted from USGS epoch-ms).
+          example: 2026-06-10T14:32:18Z
         coordinates:
           $ref: "#/components/schemas/Coordinates"
+        depth:
+          type: number
+          format: float
+          minimum: 0
+          description: |
+            Depth of the earthquake epicenter below the Earth's surface, in kilometers.
+            Sourced from USGS GeoJSON geometry.coordinates[2]. Shallow events (< 70 km)
+            typically cause more surface damage than deep events.
+          example: 35.2
         url:
           type: string
+          format: uri
+          description: USGS event detail page URL.
+          example: https://earthquake.usgs.gov/earthquakes/eventpage/us7000m9q3
 
     Coordinates:
       type: object

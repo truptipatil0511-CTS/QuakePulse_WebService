@@ -1,0 +1,630 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "serverfarms_asp_prod_cin_01_name": {
+      "defaultValue": "asp-prod-cin-01",
+      "type": "String"
+    },
+    "sites_quakepulseapi_prod_cin_01_name": {
+      "defaultValue": "quakepulseapi-prod-cin-01",
+      "type": "String"
+    },
+    "components_appi_prod_cin_01_name": {
+      "defaultValue": "appi-prod-cin-01",
+      "type": "String"
+    },
+    "smartdetectoralertrules_failure_anomalies___appi_prod_cin_01_name": {
+      "defaultValue": "failure anomalies - appi-prod-cin-01",
+      "type": "String"
+    },
+    "actiongroups_application_insights_smart_detection_externalid": {
+      "defaultValue": "/subscriptions/4116346b-5ded-4f3b-8387-f8d055802adc/resourceGroups/rg-azuser6621_mml.local-xupos/providers/microsoft.insights/actiongroups/application insights smart detection",
+      "type": "String"
+    },
+    "workspaces_managed_appi_prod_cin_01_ws_externalid": {
+      "defaultValue": "/subscriptions/4116346b-5ded-4f3b-8387-f8d055802adc/resourceGroups/ai_appi-prod-cin-01_fad8c44c-d122-41bb-878f-14f52979dde3_managed/providers/Microsoft.OperationalInsights/workspaces/managed-appi-prod-cin-01-ws",
+      "type": "String"
+    }
+  },
+  "variables": {},
+  "resources": [
+    {
+      "type": "microsoft.insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[parameters('components_appi_prod_cin_01_name')]",
+      "location": "centralindia",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "Flow_Type": "Bluefield",
+        "Request_Source": "rest",
+        "RetentionInDays": 90,
+        "WorkspaceResourceId": "[parameters('workspaces_managed_appi_prod_cin_01_ws_externalid')]",
+        "IngestionMode": "LogAnalytics",
+        "publicNetworkAccessForIngestion": "Enabled",
+        "publicNetworkAccessForQuery": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2024-11-01",
+      "name": "[parameters('serverfarms_asp_prod_cin_01_name')]",
+      "location": "Central India",
+      "sku": {
+        "name": "F1",
+        "tier": "Free",
+        "size": "F1",
+        "family": "F",
+        "capacity": 1
+      },
+      "kind": "linux",
+      "properties": {
+        "perSiteScaling": false,
+        "elasticScaleEnabled": false,
+        "maximumElasticWorkerCount": 1,
+        "isSpot": false,
+        "reserved": true,
+        "isXenon": false,
+        "hyperV": false,
+        "targetWorkerCount": 0,
+        "targetWorkerSizeId": 0,
+        "zoneRedundant": false,
+        "asyncScalingEnabled": false
+      }
+    },
+    {
+      "type": "microsoft.alertsmanagement/smartdetectoralertrules",
+      "apiVersion": "2021-04-01",
+      "name": "[parameters('smartdetectoralertrules_failure_anomalies___appi_prod_cin_01_name')]",
+      "location": "global",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "description": "Failure Anomalies notifies you of an unusual rise in the rate of failed HTTP requests or dependency calls.",
+        "state": "Enabled",
+        "severity": "Sev3",
+        "frequency": "PT1M",
+        "detector": {
+          "id": "FailureAnomaliesDetector"
+        },
+        "scope": [
+          "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+        ],
+        "actionGroups": {
+          "groupIds": [
+            "[parameters('actiongroups_application_insights_smart_detection_externalid')]"
+          ]
+        }
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/degradationindependencyduration')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "degradationindependencyduration",
+          "DisplayName": "Degradation in dependency duration",
+          "Description": "Smart Detection rules notify you of performance anomaly issues.",
+          "HelpUrl": "https://docs.microsoft.com/en-us/azure/application-insights/app-insights-proactive-performance-diagnostics",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": false,
+          "SupportsEmailNotifications": true
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/degradationinserverresponsetime')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "degradationinserverresponsetime",
+          "DisplayName": "Degradation in server response time",
+          "Description": "Smart Detection rules notify you of performance anomaly issues.",
+          "HelpUrl": "https://docs.microsoft.com/en-us/azure/application-insights/app-insights-proactive-performance-diagnostics",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": false,
+          "SupportsEmailNotifications": true
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/digestMailConfiguration')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "digestMailConfiguration",
+          "DisplayName": "Digest Mail Configuration",
+          "Description": "This rule describes the digest mail preferences",
+          "HelpUrl": "www.homail.com",
+          "IsHidden": true,
+          "IsEnabledByDefault": true,
+          "IsInPreview": false,
+          "SupportsEmailNotifications": true
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/extension_billingdatavolumedailyspikeextension')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "extension_billingdatavolumedailyspikeextension",
+          "DisplayName": "Abnormal rise in daily data volume (preview)",
+          "Description": "This detection rule automatically analyzes the billing data generated by your application, and can warn you about an unusual increase in your application's billing costs",
+          "HelpUrl": "https://github.com/Microsoft/ApplicationInsights-Home/tree/master/SmartDetection/billing-data-volume-daily-spike.md",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": true,
+          "SupportsEmailNotifications": false
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/extension_canaryextension')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "extension_canaryextension",
+          "DisplayName": "Canary extension",
+          "Description": "Canary extension",
+          "HelpUrl": "https://github.com/Microsoft/ApplicationInsights-Home/blob/master/SmartDetection/",
+          "IsHidden": true,
+          "IsEnabledByDefault": true,
+          "IsInPreview": true,
+          "SupportsEmailNotifications": false
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/extension_exceptionchangeextension')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "extension_exceptionchangeextension",
+          "DisplayName": "Abnormal rise in exception volume (preview)",
+          "Description": "This detection rule automatically analyzes the exceptions thrown in your application, and can warn you about unusual patterns in your exception telemetry.",
+          "HelpUrl": "https://github.com/Microsoft/ApplicationInsights-Home/blob/master/SmartDetection/abnormal-rise-in-exception-volume.md",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": true,
+          "SupportsEmailNotifications": false
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/extension_memoryleakextension')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "extension_memoryleakextension",
+          "DisplayName": "Potential memory leak detected (preview)",
+          "Description": "This detection rule automatically analyzes the memory consumption of each process in your application, and can warn you about potential memory leaks or increased memory consumption.",
+          "HelpUrl": "https://github.com/Microsoft/ApplicationInsights-Home/tree/master/SmartDetection/memory-leak.md",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": true,
+          "SupportsEmailNotifications": false
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/extension_securityextensionspackage')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "extension_securityextensionspackage",
+          "DisplayName": "Potential security issue detected (preview)",
+          "Description": "This detection rule automatically analyzes the telemetry generated by your application and detects potential security issues.",
+          "HelpUrl": "https://github.com/Microsoft/ApplicationInsights-Home/blob/master/SmartDetection/application-security-detection-pack.md",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": true,
+          "SupportsEmailNotifications": false
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/extension_traceseveritydetector')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "extension_traceseveritydetector",
+          "DisplayName": "Degradation in trace severity ratio (preview)",
+          "Description": "This detection rule automatically analyzes the trace logs emitted from your application, and can warn you about unusual patterns in the severity of your trace telemetry.",
+          "HelpUrl": "https://github.com/Microsoft/ApplicationInsights-Home/blob/master/SmartDetection/degradation-in-trace-severity-ratio.md",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": true,
+          "SupportsEmailNotifications": false
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/longdependencyduration')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "longdependencyduration",
+          "DisplayName": "Long dependency duration",
+          "Description": "Smart Detection rules notify you of performance anomaly issues.",
+          "HelpUrl": "https://docs.microsoft.com/en-us/azure/application-insights/app-insights-proactive-performance-diagnostics",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": false,
+          "SupportsEmailNotifications": true
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/migrationToAlertRulesCompleted')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "migrationToAlertRulesCompleted",
+          "DisplayName": "Migration To Alert Rules Completed",
+          "Description": "A configuration that controls the migration state of Smart Detection to Smart Alerts",
+          "HelpUrl": "https://docs.microsoft.com/en-us/azure/application-insights/app-insights-proactive-performance-diagnostics",
+          "IsHidden": true,
+          "IsEnabledByDefault": false,
+          "IsInPreview": true,
+          "SupportsEmailNotifications": false
+        },
+        "enabled": false,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/slowpageloadtime')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "slowpageloadtime",
+          "DisplayName": "Slow page load time",
+          "Description": "Smart Detection rules notify you of performance anomaly issues.",
+          "HelpUrl": "https://docs.microsoft.com/en-us/azure/application-insights/app-insights-proactive-performance-diagnostics",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": false,
+          "SupportsEmailNotifications": true
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "microsoft.insights/components/ProactiveDetectionConfigs",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[concat(parameters('components_appi_prod_cin_01_name'), '/slowserverresponsetime')]",
+      "location": "centralindia",
+      "dependsOn": [
+        "[resourceId('microsoft.insights/components', parameters('components_appi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "ruleDefinitions": {
+          "Name": "slowserverresponsetime",
+          "DisplayName": "Slow server response time",
+          "Description": "Smart Detection rules notify you of performance anomaly issues.",
+          "HelpUrl": "https://docs.microsoft.com/en-us/azure/application-insights/app-insights-proactive-performance-diagnostics",
+          "IsHidden": false,
+          "IsEnabledByDefault": true,
+          "IsInPreview": false,
+          "SupportsEmailNotifications": true
+        },
+        "enabled": true,
+        "sendEmailsToSubscriptionOwners": true,
+        "customEmails": []
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2024-11-01",
+      "name": "[parameters('sites_quakepulseapi_prod_cin_01_name')]",
+      "location": "Central India",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', parameters('serverfarms_asp_prod_cin_01_name'))]"
+      ],
+      "tags": {
+        "hidden-link: /app-insights-resource-id": "/subscriptions/4116346b-5ded-4f3b-8387-f8d055802adc/resourceGroups/rg-azuser7073_mml.local-46K7d/providers/microsoft.insights/components/appi-prod-cin-01"
+      },
+      "kind": "app,linux",
+      "properties": {
+        "enabled": true,
+        "hostNameSslStates": [
+          {
+            "name": "[concat(parameters('sites_quakepulseapi_prod_cin_01_name'), '.azurewebsites.net')]",
+            "sslState": "Disabled",
+            "hostType": "Standard"
+          },
+          {
+            "name": "[concat(parameters('sites_quakepulseapi_prod_cin_01_name'), '.scm.azurewebsites.net')]",
+            "sslState": "Disabled",
+            "hostType": "Repository"
+          }
+        ],
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('serverfarms_asp_prod_cin_01_name'))]",
+        "reserved": true,
+        "isXenon": false,
+        "hyperV": false,
+        "dnsConfiguration": {},
+        "outboundVnetRouting": {
+          "allTraffic": false,
+          "applicationTraffic": false,
+          "contentShareTraffic": false,
+          "imagePullTraffic": false,
+          "backupRestoreTraffic": false
+        },
+        "siteConfig": {
+          "numberOfWorkers": 1,
+          "linuxFxVersion": "DOTNETCORE|8.0",
+          "acrUseManagedIdentityCreds": false,
+          "alwaysOn": false,
+          "http20Enabled": false,
+          "functionAppScaleLimit": 0,
+          "minimumElasticInstanceCount": 1
+        },
+        "scmSiteAlsoStopped": false,
+        "clientAffinityEnabled": true,
+        "clientAffinityProxyEnabled": false,
+        "clientCertEnabled": false,
+        "clientCertMode": "Required",
+        "hostNamesDisabled": false,
+        "ipMode": "IPv4",
+        "customDomainVerificationId": "21D5D8CD8D59BEE98601D8F78B9778C15F459D95F8DA3746CD28DDE698A2F717",
+        "containerSize": 0,
+        "dailyMemoryTimeQuota": 0,
+        "httpsOnly": true,
+        "endToEndEncryptionEnabled": false,
+        "redundancyMode": "None",
+        "publicNetworkAccess": "Enabled",
+        "storageAccountRequired": false,
+        "keyVaultReferenceIdentity": "SystemAssigned"
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(parameters('sites_quakepulseapi_prod_cin_01_name'), '/ftp')]",
+      "location": "Central India",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('sites_quakepulseapi_prod_cin_01_name'))]"
+      ],
+      "tags": {
+        "hidden-link: /app-insights-resource-id": "/subscriptions/4116346b-5ded-4f3b-8387-f8d055802adc/resourceGroups/rg-azuser7073_mml.local-46K7d/providers/microsoft.insights/components/appi-prod-cin-01"
+      },
+      "properties": {
+        "allow": false
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(parameters('sites_quakepulseapi_prod_cin_01_name'), '/scm')]",
+      "location": "Central India",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('sites_quakepulseapi_prod_cin_01_name'))]"
+      ],
+      "tags": {
+        "hidden-link: /app-insights-resource-id": "/subscriptions/4116346b-5ded-4f3b-8387-f8d055802adc/resourceGroups/rg-azuser7073_mml.local-46K7d/providers/microsoft.insights/components/appi-prod-cin-01"
+      },
+      "properties": {
+        "allow": false
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(parameters('sites_quakepulseapi_prod_cin_01_name'), '/web')]",
+      "location": "Central India",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('sites_quakepulseapi_prod_cin_01_name'))]"
+      ],
+      "tags": {
+        "hidden-link: /app-insights-resource-id": "/subscriptions/4116346b-5ded-4f3b-8387-f8d055802adc/resourceGroups/rg-azuser7073_mml.local-46K7d/providers/microsoft.insights/components/appi-prod-cin-01"
+      },
+      "properties": {
+        "numberOfWorkers": 1,
+        "defaultDocuments": [
+          "Default.htm",
+          "Default.html",
+          "Default.asp",
+          "index.htm",
+          "index.html",
+          "iisstart.htm",
+          "default.aspx",
+          "index.php",
+          "hostingstart.html"
+        ],
+        "netFrameworkVersion": "v4.0",
+        "linuxFxVersion": "DOTNETCORE|8.0",
+        "requestTracingEnabled": false,
+        "remoteDebuggingEnabled": false,
+        "remoteDebuggingVersion": "VS2022",
+        "httpLoggingEnabled": false,
+        "acrUseManagedIdentityCreds": false,
+        "logsDirectorySizeLimit": 35,
+        "detailedErrorLoggingEnabled": false,
+        "publishingUsername": "REDACTED",
+        "scmType": "None",
+        "use32BitWorkerProcess": true,
+        "webSocketsEnabled": false,
+        "alwaysOn": false,
+        "appCommandLine": "dotnet QuakePulse_WebService.dll",
+        "managedPipelineMode": "Integrated",
+        "virtualApplications": [
+          {
+            "virtualPath": "/",
+            "physicalPath": "site\\wwwroot",
+            "preloadEnabled": false
+          }
+        ],
+        "loadBalancing": "LeastRequests",
+        "experiments": {
+          "rampUpRules": []
+        },
+        "autoHealEnabled": false,
+        "vnetRouteAllEnabled": false,
+        "vnetPrivatePortsCount": 0,
+        "publicNetworkAccess": "Enabled",
+        "localMySqlEnabled": false,
+        "ipSecurityRestrictions": [
+          {
+            "ipAddress": "Any",
+            "action": "Allow",
+            "priority": 2147483647,
+            "name": "Allow all",
+            "description": "Allow all access"
+          }
+        ],
+        "scmIpSecurityRestrictions": [
+          {
+            "ipAddress": "Any",
+            "action": "Allow",
+            "priority": 2147483647,
+            "name": "Allow all",
+            "description": "Allow all access"
+          }
+        ],
+        "scmIpSecurityRestrictionsUseMain": false,
+        "http20Enabled": false,
+        "minTlsVersion": "1.2",
+        "scmMinTlsVersion": "1.2",
+        "ftpsState": "FtpsOnly",
+        "preWarmedInstanceCount": 0,
+        "elasticWebAppScaleLimit": 0,
+        "healthCheckPath": "/api/health",
+        "functionsRuntimeScaleMonitoringEnabled": false,
+        "minimumElasticInstanceCount": 1,
+        "azureStorageAccounts": {},
+        "http20ProxyFlag": 0
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites/deployments",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(parameters('sites_quakepulseapi_prod_cin_01_name'), '/dbce668e-517e-483d-81f7-93975c637ba0')]",
+      "location": "Central India",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('sites_quakepulseapi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "status": 4,
+        "author_email": "N/A",
+        "author": "N/A",
+        "deployer": "Push-Deployer",
+        "message": "Created via a push deployment",
+        "start_time": "2026-06-17T13:58:38.0895284Z",
+        "end_time": "2026-06-17T13:58:42.3148236Z",
+        "active": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites/hostNameBindings",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(parameters('sites_quakepulseapi_prod_cin_01_name'), '/', parameters('sites_quakepulseapi_prod_cin_01_name'), '.azurewebsites.net')]",
+      "location": "Central India",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('sites_quakepulseapi_prod_cin_01_name'))]"
+      ],
+      "properties": {
+        "siteName": "quakepulseapi-prod-cin-01",
+        "hostNameType": "Verified"
+      }
+    }
+  ]
+}

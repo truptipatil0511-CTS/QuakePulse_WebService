@@ -1,5 +1,4 @@
-
-using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.HttpOverrides;
 using Polly;
 using QuakePulse_WebService.Caching;
 using QuakePulse_WebService.Integration;
@@ -8,138 +7,110 @@ using QuakePulse_WebService.Orchestration;
 using QuakePulse_WebService.Services;
 using Serilog;
 using StackExchange.Redis;
-using System.Configuration;
+
 internal class Program
 {
     private static void Main(string[] args)
     {
-        var builder = WebApplication.CreateBuilder(args);
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.Console()
+            .CreateBootstrapLogger();
 
-        // Configure logging based on environment
-        builder.Logging.ClearProviders();
-        builder.Logging.AddConsole();
-
-        if (builder.Environment.IsDevelopment())
+        try
         {
-            builder.Logging.SetMinimumLevel(LogLevel.Debug);
-            builder.Logging.AddDebug();
-        }
-        else
-        {
-            builder.Logging.SetMinimumLevel(LogLevel.Warning);
-        }
+            var builder = WebApplication.CreateBuilder(args);
 
-        var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
-        logger.LogInformation("=== Starting QuakePulse WebService Application ===");
-        logger.LogInformation("Environment: {Environment}", builder.Environment.EnvironmentName);
+            builder.Host.UseSerilog((context, services, config) =>
+                config.ReadFrom.Configuration(context.Configuration)
+                      .ReadFrom.Services(services)
+                      .Enrich.FromLogContext());
 
-        var usgsApiBaseAddress = builder.Configuration["ExternalApis:UsgsEarthquakeApi:BaseAddress"]
-            ?? throw new InvalidOperationException("USGS API base address is not configured.");
-
-        // Add services to the container
-        builder.Services.AddControllers();
-
-        // CORS — allow WebUI dev origins
-        builder.Services.AddCors(options =>
-        {
-            options.AddPolicy("AllowAngularApp", policy =>
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
             {
-             policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
-            //policy.WithOrigins(
-            //        "http://localhost:4201",
-            //        "https://localhost:4201")
-            //      .AllowAnyHeader()
-            //      .AllowAnyMethod();
-        });
-        });
-
-        builder.Services.AddScoped<IEarthquakeOrchestrator, EarthquakeOrchestrator>();
-        builder.Services.AddScoped<IEarthquakeService, EarthquakeService>();
-
-        builder.Services.AddHttpClient<IUsgsApiService, UsgsApiService>(client =>
-        {
-            client.BaseAddress = new Uri(usgsApiBaseAddress);
-            client.Timeout = TimeSpan.FromSeconds(30);
-        })
-            .AddTransientHttpErrorPolicy(policy =>
-                policy.WaitAndRetryAsync(3, retryAttempt =>
-                {
-                    var delay = TimeSpan.FromSeconds(Math.Pow(2, retryAttempt));
-                    return delay;
-                }));
-
-        // Read CacheSettings from appsettings.json
-        var cacheSettings = builder.Configuration
-            .GetSection("CacheSettings")
-            .Get<CacheSettings>();
-
-        
-        if (cacheSettings?.Enabled == true)
-        {
-            builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-            {
-                var serviceLogger = sp.GetRequiredService<ILogger<Program>>();
-                var redisConfig = builder.Configuration.GetSection("Redis")["ConnectionString"];
-
-                try
-                {
-                    serviceLogger.LogInformation("Connecting to Redis: {RedisConnection}",
-                        redisConfig?.Replace("password=", "password=***") ?? "localhost:6379");
-                    return ConnectionMultiplexer.Connect(redisConfig ?? "localhost:6379");
-                }
-                catch (Exception ex)
-                {
-                    serviceLogger.LogError(ex, "Failed to connect to Redis");
-                    throw;
-                }
+                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
             });
 
-            builder.Services.AddScoped<ICacheService, RedisCacheService>();
+            builder.Services.AddApplicationInsightsTelemetry(
+                options =>
+                {
+                    options.EnableAdaptiveSampling = true;
+                });
+
+            builder.Services.AddProblemDetails();
+            builder.Services.AddHealthChecks();
+
+            var usgsApiBaseAddress = builder.Configuration["ExternalApis:UsgsEarthquakeApi:BaseAddress"]
+                ?? throw new InvalidOperationException("USGS API base address is not configured.");
+
+            builder.Services.AddControllers();
+
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy("AllowAngularApp", policy =>
+                    policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+            });
+
+            builder.Services.AddScoped<IEarthquakeOrchestrator, EarthquakeOrchestrator>();
+            builder.Services.AddScoped<IEarthquakeService, EarthquakeService>();
+
+            builder.Services.AddHttpClient<IUsgsApiService, UsgsApiService>(client =>
+            {
+                client.BaseAddress = new Uri(usgsApiBaseAddress);
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .AddTransientHttpErrorPolicy(policy =>
+                policy.WaitAndRetryAsync(3, retryAttempt =>
+                    TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
+
+            var cacheSettings = builder.Configuration.GetSection("CacheSettings").Get<CacheSettings>();
+
+            if (cacheSettings?.Enabled == true)
+            {
+                builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+                {
+                    var redisConfig = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+                    return ConnectionMultiplexer.Connect(redisConfig);
+                });
+
+                builder.Services.AddScoped<ICacheService, RedisCacheService>();
+            }
+            else
+            {
+                builder.Services.AddScoped<ICacheService, NullCacheService>();
+            }
+
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
+            builder.Services.AddAutoMapper(typeof(EarthquakeProfile));
+
+            var app = builder.Build();
+
+            app.UseForwardedHeaders();
+            app.UseSerilogRequestLogging();
+            app.UseExceptionHandler();
+
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
+
+            app.UseHttpsRedirection();
+            app.UseCors("AllowAngularApp");
+            app.UseAuthorization();
+
+            app.MapControllers();
+            app.MapHealthChecks("/api/health");
+
+            app.Run();
         }
-        else
+        catch (Exception ex)
         {
-            builder.Services.AddScoped<ICacheService, NullCacheService>();
+            Log.Fatal(ex, "Application terminated unexpectedly");
         }
-        // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-        builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen();
-        builder.Services.AddAutoMapper(typeof(EarthquakeProfile));
-
-
-
-        builder.Host.UseSerilog((context, config) =>
+        finally
         {
-            config.ReadFrom.Configuration(context.Configuration);
-        });
-
-        var app = builder.Build();
-
-        // Log configuration at startup
-        var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
-        appLogger.LogInformation("Application configured for environment: {Environment}", app.Environment.EnvironmentName);
-        appLogger.LogInformation("Redis TTL (minutes): {TTL}", builder.Configuration.GetValue<int>("Redis:DefaultTTLMinutes"));
-
-        // Configure the HTTP request pipeline
-        if (app.Environment.IsDevelopment())
-        {
-            appLogger.LogInformation("Development environment - enabling Swagger and detailed logging");
-            app.UseSwagger();
-            app.UseSwaggerUI();
+            Log.CloseAndFlush();
         }
-        else
-        {
-            appLogger.LogInformation("Production environment - Swagger disabled, minimal logging active");
-        }
-
-        app.UseHttpsRedirection();
-        //app.UseCors("WebUI");
-        app.UseCors("AllowAngularApp");
-        app.UseAuthorization();
-        app.MapControllers();
-
-        appLogger.LogInformation("=== QuakePulse WebService Application Started Successfully ===");
-        app.Run();
-
-        appLogger.LogInformation("=== Shutting down QuakePulse WebService Application ===");
     }
 }
