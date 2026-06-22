@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using System.Text.Json;
+using System.Linq;
 
 namespace QuakePulse_WebService.Caching
 {
@@ -23,16 +24,16 @@ namespace QuakePulse_WebService.Caching
 
                 if (value.IsNullOrEmpty)
                 {
-                    //_logger.LogDebug("Cache key not found: {Key}", key);
+                    _logger.LogDebug("Cache key not found: {Key}", key);
                     return default;
                 }
 
-              //  _logger.LogDebug("Cache hit: {Key}", key);
+                _logger.LogDebug("Cache hit: {Key}", key);
                 return JsonSerializer.Deserialize<T>(value);
             }
             catch (Exception ex)
             {
-              //  _logger.LogError(ex, "Error retrieving from cache with key: {Key}", key);
+                _logger.LogError(ex, "Error retrieving from cache with key: {Key}", key);
                 throw;
             }
         }
@@ -45,7 +46,7 @@ namespace QuakePulse_WebService.Caching
                 var expiry = TimeSpan.FromMinutes(ttlMinutes);
 
                 await _db.StringSetAsync(key, json, expiry);
-                //_logger.LogDebug("Data cached successfully: {Key} (TTL: {TTL} minutes)", key, ttlMinutes);
+                _logger.LogDebug("Data cached successfully: {Key} (TTL: {TTL} minutes)", key, ttlMinutes);
             }
             catch (Exception ex)
             {
@@ -71,18 +72,18 @@ namespace QuakePulse_WebService.Caching
 
                 if (result)
                 {
-                   // _logger.LogInformation("Lock acquired: {LockKey}", lockKey);
+                    _logger.LogInformation("Lock acquired: {LockKey}", lockKey);
                 }
                 else
                 {
-                  //  _logger.LogDebug("Lock already held: {LockKey}", lockKey);
+                    _logger.LogDebug("Lock already held: {LockKey}", lockKey);
                 }
 
                 return result;
             }
             catch (Exception ex)
             {
-                //_logger.LogError(ex, "Error acquiring lock: {LockKey}", lockKey);
+                _logger.LogError(ex, "Error acquiring lock: {LockKey}", lockKey);
                 throw;
             }
         }
@@ -94,21 +95,28 @@ namespace QuakePulse_WebService.Caching
         {
             try
             {
-                var currentValue = await _db.StringGetAsync(lockKey);
+                const string releaseScript = @"
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+else
+    return 0
+end";
 
-                if (currentValue == lockValue)
-                {
-                    var result = await _db.KeyDeleteAsync(lockKey);
-                   // _logger.LogInformation("Lock released: {LockKey}", lockKey);
-                    return result;
-                }
+                var result = await _db.ScriptEvaluateAsync(
+                    releaseScript,
+                    new RedisKey[] { lockKey },
+                    new RedisValue[] { lockValue });
 
-               // _logger.LogWarning("Lock value mismatch for key: {LockKey}. Cannot release lock.", lockKey);
-                return false;
+                var released = (long)result == 1;
+                if (released)
+                    _logger.LogInformation("Lock released: {LockKey}", lockKey);
+                else
+                    _logger.LogWarning("Lock value mismatch, could not release: {LockKey}", lockKey);
+                return released;
             }
             catch (Exception ex)
             {
-               // _logger.LogError(ex, "Error releasing lock: {LockKey}", lockKey);
+                _logger.LogError(ex, "Error releasing lock: {LockKey}", lockKey);
                 throw;
             }
         }
@@ -125,7 +133,7 @@ namespace QuakePulse_WebService.Caching
             }
             catch (Exception ex)
             {
-               // _logger.LogError(ex, "Error getting lock: {LockKey}", lockKey);
+                _logger.LogError(ex, "Error getting lock: {LockKey}", lockKey);
                 return null;
             }
         }

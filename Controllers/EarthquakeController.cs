@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using QuakePulse_WebService.Common;
 using QuakePulse_WebService.Models.Api;
 using QuakePulse_WebService.Models.Internal;
 using QuakePulse_WebService.Services;
@@ -10,10 +12,12 @@ namespace QuakePulse_WebService.Controllers;
 public class EarthquakeController : ControllerBase
 {
     private readonly IEarthquakeService _service;
+    private readonly EarthquakeDefaults _defaults;
 
-    public EarthquakeController(IEarthquakeService service)
+    public EarthquakeController(IEarthquakeService service, IOptions<EarthquakeDefaults> defaults)
     {
         _service = service;
+        _defaults = defaults.Value;
     }
 
     // GET /api/earthquake?startDate=&endDate=&minMagnitude=&maxMagnitude=&location=&sortBy=&limit=&offset=
@@ -45,9 +49,9 @@ public class EarthquakeController : ControllerBase
 
     // GET /api/earthquake/latest?limit=10
     [HttpGet("latest")]
-    public async Task<IActionResult> GetLatest([FromQuery] int limit = 10)
+    public async Task<IActionResult> GetLatest([FromQuery] int? limit)
     {
-        var result = await _service.GetLatestAsync(limit);
+        var result = await _service.GetLatestAsync(limit ?? _defaults.LatestLimit);
         return Ok(result);
     }
 
@@ -62,7 +66,7 @@ public class EarthquakeController : ControllerBase
     {
         var query = new EarthquakeQuery
         {
-            StartDate = DateTime.UtcNow.AddDays(-30).Date,
+            StartDate = DateTime.UtcNow.AddDays(-_defaults.FilterLookbackDays).Date,
             EndDate = DateTime.UtcNow.Date,
             Lat = lat,
             Lon = lon,
@@ -96,7 +100,7 @@ public class EarthquakeController : ControllerBase
     {
         var query = new EarthquakeQuery
         {
-            StartDate    = startDate ?? DateTime.UtcNow.AddDays(-7).Date,
+            StartDate    = startDate ?? DateTime.UtcNow.AddDays(-_defaults.MapLookbackDays).Date,
             EndDate      = endDate   ?? DateTime.UtcNow.Date,
             MinMagnitude = minMagnitude,
             MaxMagnitude = maxMagnitude,
@@ -119,7 +123,7 @@ public class EarthquakeController : ControllerBase
     {
         var query = new EarthquakeQuery
         {
-            StartDate = startDate ?? DateTime.UtcNow.AddDays(-7).Date,
+            StartDate = startDate ?? DateTime.UtcNow.AddDays(-_defaults.TableLookbackDays).Date,
             EndDate = endDate ?? DateTime.UtcNow.Date
         };
         var result = await _service.GetTableAsync(query);

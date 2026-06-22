@@ -4,6 +4,8 @@ using QuakePulse_WebService.Integration;
 using QuakePulse_WebService.Models.Api;
 using QuakePulse_WebService.Models.External;
 using QuakePulse_WebService.Models.Internal;
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -61,7 +63,7 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
             var result = await FetchAndBuildListAsync(query);
             await StoreToCacheAsync(cacheKey, result);
             return result;
-        }, () => WaitForCacheAsync<EarthquakeListResponse>(cacheKey));
+        }, () => WaitForCacheOrBuildAsync(cacheKey, () => FetchAndBuildListAsync(query)));
     }
 
     // -----------------------------------------------------------------------
@@ -222,19 +224,63 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
 
     private string GenerateCacheKey(EarthquakeQuery q)
     {
-        var sb = new StringBuilder($"earthquake:{q.StartDate:yyyyMMdd}:{q.EndDate:yyyyMMdd}");
-        if (q.MinMagnitude.HasValue) sb.Append($":mn{q.MinMagnitude}");
-        if (q.MaxMagnitude.HasValue) sb.Append($":mx{q.MaxMagnitude}");
-        if (q.MinDepth.HasValue)     sb.Append($":md{q.MinDepth}");
-        if (q.MaxDepth.HasValue)     sb.Append($":xd{q.MaxDepth}");
-        if (q.Lat.HasValue)          sb.Append($":lat{q.Lat}");
-        if (q.Lon.HasValue)          sb.Append($":lon{q.Lon}");
-        if (q.Radius.HasValue)       sb.Append($":r{q.Radius}");
-        if (!string.IsNullOrEmpty(q.Location)) sb.Append($":loc{q.Location.ToLowerInvariant()}");
-        if (!string.IsNullOrEmpty(q.SortBy))   sb.Append($":s{q.SortBy}");
-        if (q.Limit.HasValue)        sb.Append($":l{q.Limit}");
-        if (q.Offset.HasValue)       sb.Append($":o{q.Offset}");
-        return sb.ToString();
+        var parts = new List<string>
+        {
+            $"starttime={q.StartDate:yyyy-MM-dd}",
+            $"endtime={q.EndDate:yyyy-MM-dd}"
+        };
+
+        if (q.MinMagnitude.HasValue) parts.Add($"minmagnitude={FormatInvariant(q.MinMagnitude.Value)}");
+        if (q.MaxMagnitude.HasValue) parts.Add($"maxmagnitude={FormatInvariant(q.MaxMagnitude.Value)}");
+        if (q.MinDepth.HasValue)     parts.Add($"mindepth={FormatInvariant(q.MinDepth.Value)}");
+        if (q.MaxDepth.HasValue)     parts.Add($"maxdepth={FormatInvariant(q.MaxDepth.Value)}");
+        if (q.Limit.HasValue)        parts.Add($"limit={q.Limit.Value}");
+        if (q.Offset.HasValue)       parts.Add($"offset={q.Offset.Value}");
+
+        if (q.Lat.HasValue && q.Lon.HasValue)
+        {
+            parts.Add($"latitude={FormatInvariant(q.Lat.Value)}");
+            parts.Add($"longitude={FormatInvariant(q.Lon.Value)}");
+            if (q.Radius.HasValue)
+                parts.Add($"maxradiuskm={FormatInvariant(q.Radius.Value)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(q.SortBy))
+        {
+            var normalizedSort = q.SortBy.Trim().ToLowerInvariant() switch
+            {
+                "magnitude" => "magnitude",
+                "date" => "time",
+                _ => "time"
+            };
+            parts.Add($"orderby={normalizedSort}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(q.Location))
+        {
+            var normalizedLocation = NormalizeLocation(q.Location);
+            parts.Add($"location={ShortHash(normalizedLocation)}");
+        }
+
+        return $"earthquake:v1:{string.Join("&", parts)}";
+    }
+
+    private static string FormatInvariant(double value) => value.ToString("0.########", CultureInfo.InvariantCulture);
+
+    private static string NormalizeLocation(string location)
+    {
+        var tokens = location
+            .Trim()
+            .ToLowerInvariant()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return string.Join(' ', tokens);
+    }
+
+    private static string ShortHash(string input)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }
 
     private async Task<T?> GetFromCacheAsync<T>(string key)
@@ -268,17 +314,35 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
 
         try
         {
-            lockAcquired = await _cacheService.AcquireLockAsync(lockKey, lockValue, _cacheSettings.LockDurationSeconds);
+            try
+            {
+                lockAcquired = await _cacheService.AcquireLockAsync(lockKey, lockValue, _cacheSettings.LockDurationSeconds);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Cache lock acquire failed for key: {CacheKey}. Falling back to direct fetch.", cacheKey);
+                return await onLockAcquired();
+            }
+
             return lockAcquired ? await onLockAcquired() : await onLockHeld();
         }
         finally
         {
             if (lockAcquired)
-                await _cacheService.ReleaseLockAsync(lockKey, lockValue);
+            {
+                try
+                {
+                    await _cacheService.ReleaseLockAsync(lockKey, lockValue);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Cache lock release failed for key: {CacheKey}", cacheKey);
+                }
+            }
         }
     }
 
-    private async Task<T> WaitForCacheAsync<T>(string cacheKey) where T : new()
+    private async Task<T> WaitForCacheOrBuildAsync<T>(string cacheKey, Func<Task<T>> fallbackFactory) where T : new()
     {
         for (int i = 0; i < _cacheSettings.MaxLockWaitAttempts; i++)
         {
@@ -288,6 +352,6 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
         }
 
         _logger.LogWarning("Timeout waiting for cache key: {CacheKey}", cacheKey);
-        return new T();
+        return await fallbackFactory();
     }
 }
