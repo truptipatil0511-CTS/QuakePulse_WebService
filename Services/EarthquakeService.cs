@@ -1,9 +1,9 @@
-using QuakePulse_WebService.Models.Api;
-using QuakePulse_WebService.Models.Internal;
-using QuakePulse_WebService.Orchestration;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using QuakePulse_WebService.Models.Api;
+using QuakePulse_WebService.Models.Internal;
+using QuakePulse_WebService.Orchestration;
 
 namespace QuakePulse_WebService.Services
 {
@@ -38,12 +38,18 @@ namespace QuakePulse_WebService.Services
         // --------------------------------------------------------------------
         public Task<HtmlResponse> TransformToHtmlAsync(TransformRequest request)
         {
+            _logger.LogInformation("[API] TransformToHtmlAsync invoked. Mode={Mode} Rows={Rows}",
+                request.Mode, request.Data?.Count ?? 0);
+
             if (request.Mode.Equals("genai", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("[FALLBACK] GenAI mode requested but not configured. Returning placeholder HTML.");
                 return Task.FromResult(new HtmlResponse
                 {
                     Html = "<p>GenAI transformation is not yet configured.</p>",
                     Source = "genai"
                 });
+            }
 
             return Task.FromResult(new HtmlResponse
             {
@@ -57,7 +63,23 @@ namespace QuakePulse_WebService.Services
         // --------------------------------------------------------------------
         public async Task<AssistantResponse> QueryAssistantAsync(AssistantRequest request)
         {
-            var query = ParseNaturalLanguage(request.Query, out var parsedFilters);
+            _logger.LogInformation("[API] QueryAssistantAsync invoked. RawQuery={RawQuery}", request.Query);
+
+            EarthquakeQuery query;
+            Dictionary<string, object?> parsedFilters;
+            try
+            {
+                query = ParseNaturalLanguage(request.Query, out parsedFilters);
+                _logger.LogInformation(
+                    "[API] Assistant parsed query: Start={Start:yyyy-MM-dd} End={End:yyyy-MM-dd} MinMag={MinMag} MaxMag={MaxMag} Limit={Limit}",
+                    query.StartDate, query.EndDate, query.MinMagnitude, query.MaxMagnitude, query.Limit);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[ERROR] Exception occurred while parsing assistant query: {Message}", ex.Message);
+                throw;
+            }
+
             var list = await _orchestrator.GetEarthquakesAsync(query);
 
             return new AssistantResponse
@@ -75,7 +97,6 @@ namespace QuakePulse_WebService.Services
             if (rows == null || rows.Count == 0)
                 return "<p>No data provided.</p>";
 
-            // Collect all unique keys from all objects
             var keys = rows
                 .Where(r => r.ValueKind == JsonValueKind.Object)
                 .SelectMany(r => r.EnumerateObject().Select(p => p.Name))

@@ -1,4 +1,4 @@
-using AutoMapper;
+    using AutoMapper;
 using QuakePulse_WebService.Caching;
 using QuakePulse_WebService.Integration;
 using QuakePulse_WebService.Models.Api;
@@ -40,25 +40,37 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
     // -----------------------------------------------------------------------
     public async Task<EarthquakeListResponse> GetEarthquakesAsync(EarthquakeQuery query)
     {
-        _logger.LogInformation("GetEarthquakesAsync: {StartDate:yyyy-MM-dd} to {EndDate:yyyy-MM-dd}", query.StartDate, query.EndDate);
+        _logger.LogInformation(
+            "[API] GetEarthquakesAsync request received: {StartDate:yyyy-MM-dd} to {EndDate:yyyy-MM-dd}",
+            query.StartDate, query.EndDate);
 
         if (!_cacheSettings.Enabled)
+        {
+            _logger.LogInformation("[CACHE] Disabled by configuration. Skipping lookup.");
             return await FetchAndBuildListAsync(query);
+        }
 
         var cacheKey = GenerateCacheKey(query);
         var cached = await GetFromCacheAsync<EarthquakeListResponse>(cacheKey);
         if (cached != null)
         {
             cached.Metadata.Cached = true;
-            _logger.LogInformation("Cache hit: {CacheKey}", cacheKey);
+            _logger.LogInformation("[CACHE] HIT for key {Key}", cacheKey);
             return cached;
         }
+
+        _logger.LogInformation("[CACHE] MISS for key {Key}", cacheKey);
 
         return await WithLockAsync(cacheKey, async () =>
         {
             // Double-check after acquiring lock
             var doubleCheck = await GetFromCacheAsync<EarthquakeListResponse>(cacheKey);
-            if (doubleCheck != null) { doubleCheck.Metadata.Cached = true; return doubleCheck; }
+            if (doubleCheck != null)
+            {
+                doubleCheck.Metadata.Cached = true;
+                _logger.LogInformation("[CACHE] HIT (post-lock) for key {Key}", cacheKey);
+                return doubleCheck;
+            }
 
             var result = await FetchAndBuildListAsync(query);
             await StoreToCacheAsync(cacheKey, result);
@@ -71,7 +83,7 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
     // -----------------------------------------------------------------------
     public async Task<EarthquakeDto?> GetEarthquakeByIdAsync(string id)
     {
-        _logger.LogInformation("GetEarthquakeByIdAsync: {Id}", id);
+        _logger.LogInformation("[API] GetEarthquakeByIdAsync request received: {Id}", id);
         try
         {
             var json = await _apiService.GetEarthquakeByIdAsync(id);
@@ -80,11 +92,12 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
             // USGS returns a FeatureCollection for eventid queries
             var root = JsonSerializer.Deserialize<GeoJsonRoot>(json, options);
             var feature = root?.features?.FirstOrDefault();
+            _logger.LogInformation("[API] Success response received for id {Id} (found={Found})", id, feature != null);
             return feature == null ? null : _mapper.Map<EarthquakeDto>(feature);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch earthquake by id: {Id}", id);
+            _logger.LogError(ex, "[ERROR] Exception occurred fetching earthquake by id {Id}: {Message}", id, ex.Message);
             throw;
         }
     }
@@ -110,15 +123,13 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
     public async Task<GeoJsonResponse> GetMapDataAsync(EarthquakeQuery query)
     {
         _logger.LogInformation(
-            "GetMapDataAsync: {StartDate:yyyy-MM-dd}→{EndDate:yyyy-MM-dd} mag={MinMag}-{MaxMag} depth={MinDepth}-{MaxDepth} loc='{Location}'",
+            "[API] GetMapDataAsync: {StartDate:yyyy-MM-dd}→{EndDate:yyyy-MM-dd} mag={MinMag}-{MaxMag} depth={MinDepth}-{MaxDepth} loc='{Location}'",
             query.StartDate, query.EndDate,
             query.MinMagnitude, query.MaxMagnitude,
             query.MinDepth, query.MaxDepth,
             query.Location ?? "");
 
         // Reuse the same filter-and-cache pipeline as the list endpoint.
-        // The GeoJSON response is a projection over the same filtered dataset,
-        // so map and list views stay in lockstep.
         var list = await GetEarthquakesAsync(query);
 
         return new GeoJsonResponse
@@ -127,7 +138,6 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
             {
                 Geometry = new GeoJsonGeometry
                 {
-                    // GeoJSON convention: [longitude, latitude, depth]
                     Coordinates = new[] { e.Longitude, e.Latitude, e.Depth }
                 },
                 Properties = new Dictionary<string, object?>
@@ -136,7 +146,7 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
                     ["magnitude"] = e.Magnitude,
                     ["place"]     = e.Location,
                     ["time"]      = e.Time,
-                    ["depth"]     = e.Depth,      // duplicate of coords[2] — enables data-driven styling without indexing
+                    ["depth"]     = e.Depth,
                     ["status"]    = e.Status,
                     ["title"]     = e.Title,
                     ["url"]       = e.Url
@@ -163,7 +173,17 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
     // -----------------------------------------------------------------------
     private async Task<EarthquakeListResponse> FetchAndBuildListAsync(EarthquakeQuery query)
     {
-        var json = await _apiService.GetEarthquakeDataAsync(query);
+        string json;
+        try
+        {
+            json = await _apiService.GetEarthquakeDataAsync(query);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[ERROR] Exception occurred while fetching from USGS: {Message}", ex.Message);
+            throw;
+        }
+
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         GeoJsonRoot? root;
 
@@ -173,12 +193,12 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "Failed to deserialize USGS GeoJSON");
+            _logger.LogError(ex, "[ERROR] Failed to deserialize USGS GeoJSON: {Message}", ex.Message);
             throw new InvalidOperationException("Failed to deserialize earthquake data.", ex);
         }
 
         var features = root?.features ?? new List<Feature>();
-        _logger.LogInformation("Fetched {Count} records from USGS", features.Count);
+        _logger.LogInformation("[API] Fetched {Count} records from USGS", features.Count);
 
         var earthquakes = _mapper.Map<List<EarthquakeDto>>(features);
 
@@ -288,7 +308,7 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
         try { return await _cacheService.GetAsync<T>(key); }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Cache get failed for key: {Key}", key);
+            _logger.LogWarning(ex, "[CACHE] GET failed for key {Key}: {Message}", key, ex.Message);
             return default;
         }
     }
@@ -298,11 +318,11 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
         try
         {
             await _cacheService.SetAsync(key, value, _ttlMinutes);
-            _logger.LogDebug("Cached {Key} (TTL: {TTL}m)", key, _ttlMinutes);
+            _logger.LogInformation("[CACHE] STORED key {Key} (TTL: {TTL}m)", key, _ttlMinutes);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Cache set failed for key: {Key}", key);
+            _logger.LogWarning(ex, "[CACHE] SET failed for key {Key}: {Message}", key, ex.Message);
         }
     }
 
@@ -320,11 +340,20 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Cache lock acquire failed for key: {CacheKey}. Falling back to direct fetch.", cacheKey);
+                _logger.LogWarning(ex,
+                    "[FALLBACK] Cache lock acquire failed for key {CacheKey}. Falling back to direct fetch. Reason: {Message}",
+                    cacheKey, ex.Message);
                 return await onLockAcquired();
             }
 
-            return lockAcquired ? await onLockAcquired() : await onLockHeld();
+            if (lockAcquired)
+            {
+                _logger.LogInformation("[CACHE] LOCK acquired for key {CacheKey}", cacheKey);
+                return await onLockAcquired();
+            }
+
+            _logger.LogInformation("[CACHE] LOCK held by another request for key {CacheKey}. Waiting.", cacheKey);
+            return await onLockHeld();
         }
         finally
         {
@@ -333,10 +362,11 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
                 try
                 {
                     await _cacheService.ReleaseLockAsync(lockKey, lockValue);
+                    _logger.LogInformation("[CACHE] LOCK released for key {CacheKey}", cacheKey);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Cache lock release failed for key: {CacheKey}", cacheKey);
+                    _logger.LogWarning(ex, "[CACHE] LOCK release failed for key {CacheKey}: {Message}", cacheKey, ex.Message);
                 }
             }
         }
@@ -348,10 +378,16 @@ public class EarthquakeOrchestrator : IEarthquakeOrchestrator
         {
             await Task.Delay(_cacheSettings.LockWaitTimeMs);
             var data = await GetFromCacheAsync<T>(cacheKey);
-            if (data != null) return data;
+            if (data != null)
+            {
+                _logger.LogInformation("[CACHE] HIT after wait ({Attempts} attempts) for key {Key}", i + 1, cacheKey);
+                return data;
+            }
         }
 
-        _logger.LogWarning("Timeout waiting for cache key: {CacheKey}", cacheKey);
+        _logger.LogWarning(
+            "[FALLBACK] Timeout waiting for cache key {CacheKey} after {MaxAttempts} attempts. Using fallback fetch.",
+            cacheKey, _cacheSettings.MaxLockWaitAttempts);
         return await fallbackFactory();
     }
 }

@@ -94,7 +94,21 @@ internal class Program
             })
             .AddTransientHttpErrorPolicy(policy =>
                 policy.WaitAndRetryAsync(apiSettings.RetryAttempts, retryAttempt =>
-                    TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
+                    TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))))
+            .AddTransientHttpErrorPolicy(policy =>
+                policy.CircuitBreakerAsync(
+                    handledEventsAllowedBeforeBreaking: 5,
+                    durationOfBreak: TimeSpan.FromSeconds(30),
+                    onBreak: (outcome, breakDelay) =>
+                    {
+                        Log.Warning(
+                            "[CIRCUIT] Opened for {BreakMs}ms after failure. Status={Status} Reason={Reason}",
+                            breakDelay.TotalMilliseconds,
+                            (int?)outcome.Result?.StatusCode,
+                            outcome.Exception?.Message);
+                    },
+                    onReset: () => Log.Information("[CIRCUIT] Closed — calls flowing again."),
+                    onHalfOpen: () => Log.Information("[CIRCUIT] Half-open — probing the next call.")));
 
             var cacheSettings = builder.Configuration.GetSection("CacheSettings").Get<CacheSettings>();
             var redisConnStr = builder.Configuration["Redis:ConnectionString"];
@@ -134,7 +148,7 @@ internal class Program
                     Log.Warning("CacheSettings:Enabled is true but Redis:ConnectionString is empty. Falling back to NullCacheService.");
                 }
                 builder.Services.AddScoped<ICacheService, NullCacheService>();
-            }
+                }
 
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
@@ -147,12 +161,9 @@ internal class Program
             app.UseSerilogRequestLogging();
             app.UseExceptionHandler();
 
-            if (app.Environment.IsDevelopment())
-            {
-                app.UseSwagger();
-                app.UseSwaggerUI();
-            }
-
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        
             app.UseHttpsRedirection();
             app.UseCors(corsSettings.PolicyName);
             app.UseAuthorization();

@@ -44,6 +44,10 @@ public class EarthquakeController : ControllerBase
             Offset = offset
         };
         var result = await _service.GetEarthquakesAsync(query);
+
+        Response.Headers.CacheControl = "public, max-age=60, s-maxage=60";
+        Response.Headers.ETag = $"\"{result.Metadata.Count}-{result.Data.FirstOrDefault()?.Id ?? "empty"}\"";
+
         return Ok(result);
     }
 
